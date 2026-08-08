@@ -1,0 +1,139 @@
+import os
+import sys
+from pathlib import Path
+
+from telegram.ext import (
+    ApplicationBuilder,
+    CommandHandler,
+    ConversationHandler,
+    MessageHandler,
+    CallbackQueryHandler,
+    filters,
+)
+
+from src.config_manager import get_telegram_token, load_profile
+from create_template import generate_default_template, TEMPLATES_DIR, ASSETS_DIR
+from src.bot_handlers import (
+    start_command,
+    profile_command,
+    cancel_command,
+    setup_start,
+    setup_nama,
+    setup_nim,
+    tugas_start,
+    tugas_matkul,
+    tugas_judul,
+    skip_judul,
+    receive_image,
+    selesai_tugas,
+    choose_filter,
+    process_and_send_documents,
+    get_other_file,
+    SETUP_NAMA,
+    SETUP_NIM,
+    WAITING_MATKUL,
+    WAITING_JUDUL,
+    WAITING_IMAGES,
+    SELECT_FILTER,
+    SELECT_FORMAT,
+)
+
+BASE_DIR = Path(__file__).resolve().parent
+
+
+def initialize_environment():
+    """Ensures all required project directories and templates exist."""
+    directories = [
+        BASE_DIR / "config",
+        BASE_DIR / "templates",
+        BASE_DIR / "assets",
+        BASE_DIR / "temp" / "raw",
+        BASE_DIR / "temp" / "processed",
+        BASE_DIR / "output",
+    ]
+    for d in directories:
+        d.mkdir(parents=True, exist_ok=True)
+
+    load_profile()
+
+    tmpl_path = TEMPLATES_DIR / "template_tugas.docx"
+    asset_path = ASSETS_DIR / "template.docx"
+    if not tmpl_path.exists() or not asset_path.exists():
+        print("[Main] Initializing default Word templates...")
+        generate_default_template([tmpl_path, asset_path])
+
+
+def main():
+    """Main application entry point."""
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(encoding="utf-8")
+
+    print("=" * 60)
+    print(" [BOT] Starting Telegram Assignment Converter Bot ")
+    print("=" * 60)
+
+    initialize_environment()
+
+    token = get_telegram_token()
+    if not token or token == "your_telegram_bot_token_here":
+        print("\n❌ TELEGRAM_BOT_TOKEN belum dikonfigurasi!")
+        print("Buka file '.env' di direktori proyek ini dan isi token bot Telegram Anda dari @BotFather.")
+        print("Contoh: TELEGRAM_BOT_TOKEN=123456789:ABCdefGhIJKlmNoPQRsTUVwxyZ\n")
+        sys.exit(1)
+
+    app = ApplicationBuilder().token(token).build()
+
+    # 1. Setup / Profile Conversation Handler
+    setup_conv = ConversationHandler(
+        entry_points=[
+            CommandHandler("setup", setup_start),
+            CommandHandler("setprofile", setup_start),
+        ],
+        states={
+            SETUP_NAMA: [MessageHandler(filters.TEXT & ~filters.COMMAND, setup_nama)],
+            SETUP_NIM: [MessageHandler(filters.TEXT & ~filters.COMMAND, setup_nim)],
+        },
+        fallbacks=[CommandHandler("cancel", cancel_command)],
+    )
+
+    # 2. Assignment Submission Conversation Handler
+    tugas_conv = ConversationHandler(
+        entry_points=[
+            CommandHandler("tugas", tugas_start),
+            CommandHandler("buat_tugas", tugas_start),
+        ],
+        states={
+            WAITING_MATKUL: [MessageHandler(filters.TEXT & ~filters.COMMAND, tugas_matkul)],
+            WAITING_JUDUL: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, tugas_judul),
+                CommandHandler("skip", skip_judul),
+            ],
+            WAITING_IMAGES: [
+                MessageHandler(filters.PHOTO | filters.Document.ALL, receive_image),
+                CommandHandler("selesai", selesai_tugas),
+            ],
+            SELECT_FILTER: [
+                CallbackQueryHandler(choose_filter, pattern="^mode_")
+            ],
+            SELECT_FORMAT: [
+                CallbackQueryHandler(process_and_send_documents, pattern="^fmt_")
+            ],
+        },
+        fallbacks=[CommandHandler("cancel", cancel_command)],
+        per_message=False,
+    )
+
+    # Register handlers
+    app.add_handler(CommandHandler("start", start_command))
+    app.add_handler(CommandHandler("profile", profile_command))
+    app.add_handler(setup_conv)
+    app.add_handler(tugas_conv)
+    app.add_handler(CallbackQueryHandler(get_other_file, pattern="^get_other_"))
+    app.add_handler(CommandHandler("cancel", cancel_command))
+
+    print("[Main] Bot Telegram siap dan mendengarkan pesan (Polling)...")
+    app.run_polling()
+
+
+if __name__ == "__main__":
+    main()

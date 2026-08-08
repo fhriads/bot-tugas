@@ -1,0 +1,14 @@
+services:
+  - type: worker
+    name: telegram-assignment-bot
+    env: docker
+    dockerfilePath: Dockerfile
+    plan: free
+    autoDeploy: true
+    envVars:
+      - key: TELEGRAM_BOT_TOKEN
+        sync: false
+      - key: DEFAULT_NAMA
+        value: Sahrul Mubarok
+      - key: DEFAULT_NIM
+        value: 202511420106

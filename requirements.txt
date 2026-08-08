@@ -1,0 +1,7 @@
+python-telegram-bot>=20.0
+opencv-python-headless>=4.8.0
+Pillow>=10.0.0
+numpy>=1.24.0
+python-docx>=0.8.11
+docx2pdf>=0.1.8
+python-dotenv>=1.0.0
