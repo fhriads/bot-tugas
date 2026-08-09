@@ -18,39 +18,27 @@ Bot Telegram berbasis Python untuk otomatisasi konversi foto tugas tulisan tanga
 
 ---
 
-## ☁️ Panduan Deployment ke Render.com (Free Tier)
+## ☁️ Panduan Deployment ke Render.com (Free Tier - Web Service)
 
-Aplikasi ini sudah dilengkapi dengan `Dockerfile` dan `render.yaml` sehingga siap dideploy ke **Render.com Free Tier** sebagai **Background Worker**.
+Layanan Background Worker di Render memang berbayar, tetapi **Web Service di Render memiliki paket GRATIS (Free Tier $0/month)**.
 
-### Langkah 1: Push Kode ke Repository GitHub
-1. Buat repository baru di GitHub (misal: `telegram-assignment-bot`).
-2. Jalankan perintah git di terminal proyek lokal Anda:
-   ```bash
-   git init
-   git add .
-   git commit -m "Initial commit for Render deployment"
-   git branch -M main
-   git remote add origin https://github.com/USERNAME/telegram-assignment-bot.git
-   git push -u origin main
-   ```
+Aplikasi ini sudah dilengkapi dengan server HTTP internal ringan pada `main.py` sehingga dapat dideploy secara 100% **GRATIS** sebagai **Web Service** di Render.com!
 
-### Langkah 2: Deploy di Render.com
-1. Buka [Render Dashboard](https://dashboard.render.com/) dan login.
-2. Klik tombol **New +** -> pilih **Background Worker**.
-3. Hubungkan ke repository GitHub Anda (`telegram-assignment-bot`).
+### Langkah Deployment di Render.com:
+1. Buka [Render Dashboard](https://dashboard.render.com/).
+2. Klik tombol **New +** -> pilih **Web Service** (Bukan Background Worker).
+3. Hubungkan ke repository GitHub Anda (`fhriads/bot-tugas`).
 4. Isikan konfigurasi berikut:
-   - **Name:** `telegram-assignment-bot`
-   - **Environment:** `Docker` *(akan otomatis terdeteksi via Dockerfile)*
+   - **Name:** `bot-tugas`
+   - **Environment:** `Docker`
    - **Region:** Singapore / Oregon / Frankfurt
    - **Branch:** `main`
-   - **Plan:** `Free`
+   - **Instance Type:** `Free` ($0/month)
 5. Pada bagian **Environment Variables**, tambahkan:
-   - `TELEGRAM_BOT_TOKEN`: *(Isikan Token Telegram Bot dari @BotFather)*
-   - `DEFAULT_NAMA`: *(Opsional, contoh: Nama Anda)*
-   - `DEFAULT_NIM`: *(Opsional, contoh: NIM Anda)*
-6. Klik **Create Background Worker**.
+   - `TELEGRAM_BOT_TOKEN`: *(Token Telegram Bot dari @BotFather)*
+6. Klik **Create Web Service**.
 
-Render akan otomatis mendownload Dockerfile, menginstall **LibreOffice** untuk konversi PDF, menginstall dependensi Python, dan menjalankan bot Telegram 24/7 secara gratis!
+Render akan mem-build Docker container, menginstall **LibreOffice** untuk konversi PDF, dan menjalankan bot Telegram 24/7 secara GRATIS!
 
 ---
 

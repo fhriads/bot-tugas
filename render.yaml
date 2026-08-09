@@ -1,6 +1,6 @@
 services:
-  - type: worker
-    name: telegram-assignment-bot
+  - type: web
+    name: bot-tugas
     env: docker
     dockerfilePath: Dockerfile
     plan: free

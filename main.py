@@ -1,5 +1,7 @@
 import os
 import sys
+import threading
+from http.server import HTTPServer, BaseHTTPRequestHandler
 from pathlib import Path
 
 from telegram.ext import (
@@ -41,6 +43,30 @@ from src.bot_handlers import (
 BASE_DIR = Path(__file__).resolve().parent
 
 
+class HealthCheckHandler(BaseHTTPRequestHandler):
+    """Simple HTTP server handler for Render Free Web Service health checks."""
+    def do_GET(self):
+        self.send_response(200)
+        self.send_header("Content-type", "text/plain")
+        self.end_headers()
+        self.wfile.write(b"OK - Telegram Bot is running!")
+
+    def log_message(self, format, *args):
+        # Suppress verbose HTTP server logs in console
+        pass
+
+
+def start_health_check_server():
+    """Starts background HTTP server listening on PORT for Render Web Service."""
+    port = int(os.getenv("PORT", 8080))
+    try:
+        server = HTTPServer(("0.0.0.0", port), HealthCheckHandler)
+        print(f"[HealthCheck] Dummy HTTP server listening on port {port} for Render Free Web Service...")
+        server.serve_forever()
+    except Exception as e:
+        print(f"[HealthCheck] Warning: HTTP server error: {e}")
+
+
 def initialize_environment():
     """Ensures all required project directories and templates exist."""
     directories = [
@@ -71,6 +97,9 @@ def main():
     print("=" * 60)
     print(" [BOT] Starting Telegram Assignment Converter Bot ")
     print("=" * 60)
+
+    # Start dummy HTTP health check server in background thread for Render Free Web Service
+    threading.Thread(target=start_health_check_server, daemon=True).start()
 
     initialize_environment()
 
