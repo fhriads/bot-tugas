@@ -106,9 +106,31 @@ async def scheduler_loop(application: Application):
         await asyncio.sleep(60)
 
 
+async def setup_bot_commands(application: Application):
+    """Registers the Telegram persistent command menu button [/] Menu."""
+    from telegram import BotCommand
+    commands = [
+        BotCommand("start", "🌸 Menu Utama Gwis"),
+        BotCommand("tugas", "📚 Buat Tugas Baru (Word/PDF)"),
+        BotCommand("convert", "🔄 Convert PDF ke Word (.docx)"),
+        BotCommand("deadline", "⏰ Pengingat Deadline Tugas (AI)"),
+        BotCommand("jadwal", "📅 Jadwal Kuliah & Ruangan (AI/Foto)"),
+        BotCommand("profile", "👤 Lihat Profil Pengguna"),
+        BotCommand("setup", "✏️ Ubah Nama & NIM"),
+        BotCommand("cancel", "❌ Batal / Keluar Sesi"),
+    ]
+    try:
+        await application.bot.set_my_commands(commands)
+        print("[Main] Persistent Telegram Bot command menu button registered successfully!")
+    except Exception as e:
+        print(f"[Main] Notice: Failed setting bot command menu ({e})")
+
+
 async def post_init_scheduler(application: Application):
-    """Post initialization hook for ApplicationBuilder to start background scheduler."""
+    """Post initialization hook for ApplicationBuilder to setup commands menu & start background scheduler."""
+    await setup_bot_commands(application)
     asyncio.create_task(scheduler_loop(application))
+
 
 
 def start_deadline_scheduler(application: Application):

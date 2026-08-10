@@ -624,9 +624,13 @@ async def deadline_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     keyboard = [
         [
             InlineKeyboardButton("📋 Lihat Semua Deadline", callback_data="dl_view_all"),
+            InlineKeyboardButton("✅ Tandai Selesai", callback_data="dl_finish_menu")
+        ],
+        [
             InlineKeyboardButton("🗑 Hapus Deadline", callback_data="dl_delete_menu")
         ]
     ]
+
     reply_markup = InlineKeyboardMarkup(keyboard)
 
     if update.callback_query:
@@ -726,6 +730,17 @@ async def handle_deadline_buttons(update: Update, context: ContextTypes.DEFAULT_
         for d in deadlines:
             keyboard.append([InlineKeyboardButton(f"❌ Hapus: {d['matkul']} ({d['deadline']})", callback_data=f"dl_del:{d['id']}")])
         await query.message.reply_text("🗑 *Pilih deadline yang ingin kamu hapus:*", reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
+
+    elif data == "dl_finish_menu":
+        deadlines = get_user_deadlines(user_id)
+        if not deadlines:
+            await query.message.reply_text("🌸 Tidak ada deadline aktif yang dapat ditandai selesai.")
+            return
+        keyboard = []
+        for d in deadlines:
+            keyboard.append([InlineKeyboardButton(f"✅ Selesai: {d['matkul']}", callback_data=f"dl_done:{d['id']}")])
+        await query.message.reply_text("🎉 *Pilih tugas yang sudah kamu selesaikan:* 🌸", reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
+
 
     elif data.startswith("dl_del:"):
         dl_id = data.split(":", 1)[1]
