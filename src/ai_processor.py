@@ -12,26 +12,41 @@ GWIS_SYSTEM_INSTRUCTION = (
     "yang santai tapi sopan, dengan gaya sapaan ramah dan perhatian (misal menggunakan kata sapaan 'Gwis' dan emotikon 🌸✨)."
 )
 
+# Preferred Gemini models for the new google-genai SDK
+GEMINI_MODELS = ["gemini-2.0-flash", "gemini-2.5-flash-lite", "gemini-flash-latest"]
+
 
 def get_gemini_api_key() -> str:
     """Retrieves Gemini API Key from environment variables."""
     return os.getenv("GEMINI_API_KEY", "").strip()
 
 
+def _get_genai_client():
+    """Initializes and returns new official google-genai Client if API Key is configured."""
+    api_key = get_gemini_api_key()
+    if not api_key or api_key == "your_gemini_api_key_here":
+        return None
+    try:
+        from google import genai
+        return genai.Client(api_key=api_key)
+    except Exception as e:
+        print(f"[AIProcessor] Failed to initialize google-genai Client: {e}")
+        return None
+
+
 def parse_deadline_with_ai(user_text: str, current_time: datetime = None) -> dict:
     """
-    Parses natural language deadline text (e.g. 'tugas kalkulus 2 besok jam 11 malam')
-    into a structured dictionary using Gemini AI.
+    Parses natural language deadline text into a structured dictionary using Gemini AI.
     Returns: {"matkul": str, "tugas": str, "deadline": "YYYY-MM-DD HH:MM"}
     """
     if current_time is None:
         current_time = datetime.now()
 
     current_time_str = current_time.strftime("%Y-%m-%d %H:%M (%A)")
-    api_key = get_gemini_api_key()
+    client = _get_genai_client()
 
-    if not api_key:
-        print("[AIProcessor] Warning: GEMINI_API_KEY not configured, using smart regex fallback.")
+    if not client:
+        print("[AIProcessor] Notice: GEMINI_API_KEY not configured or client error, using smart fallback parser.")
         return _fallback_parse_deadline(user_text, current_time)
 
     prompt = (
@@ -51,24 +66,23 @@ def parse_deadline_with_ai(user_text: str, current_time: datetime = None) -> dic
         f"- Jika nama matkul tidak jelas, gunakan potongan judul tugas utama."
     )
 
-    try:
-        # Try google.genai or google.generativeai
+    resp_text = None
+    for model_name in GEMINI_MODELS:
         try:
-            import google.generativeai as genai
-            genai.configure(api_key=api_key)
-            model = genai.GenerativeModel("gemini-1.5-flash")
-            response = model.generate_content(prompt)
-            resp_text = response.text.strip()
-        except Exception:
-            from google import genai
-            client = genai.Client(api_key=api_key)
             response = client.models.generate_content(
-                model="gemini-2.5-flash",
+                model=model_name,
                 contents=prompt,
             )
-            resp_text = response.text.strip()
+            if response and response.text:
+                resp_text = response.text.strip()
+                break
+        except Exception as e:
+            print(f"[AIProcessor] Model '{model_name}' failed ({e}). Trying next model...")
 
-        # Clean JSON markdown fences if present
+    if not resp_text:
+        return _fallback_parse_deadline(user_text, current_time)
+
+    try:
         resp_text = re.sub(r"^```json\s*", "", resp_text)
         resp_text = re.sub(r"^```\s*", "", resp_text)
         resp_text = re.sub(r"\s*```$", "", resp_text)
@@ -79,9 +93,8 @@ def parse_deadline_with_ai(user_text: str, current_time: datetime = None) -> dic
             "tugas": data.get("tugas", user_text).strip(),
             "deadline": data.get("deadline", (current_time + timedelta(days=1)).strftime("%Y-%m-%d 23:59")).strip(),
         }
-
     except Exception as e:
-        print(f"[AIProcessor] Gemini API error ({e}), falling back to regex parser.")
+        print(f"[AIProcessor] Failed to parse JSON response ({e}). Using fallback parser.")
         return _fallback_parse_deadline(user_text, current_time)
 
 
@@ -94,7 +107,16 @@ def parse_schedule_from_image_or_text(image_bytes_or_path=None, text_content: st
       "Selasa": [...]
     }
     """
-    api_key = get_gemini_api_key()
+    client = _get_genai_client()
+    if not client:
+        print("[AIProcessor] Notice: GEMINI_API_KEY not configured for Schedule OCR.")
+        return {}
+
+    try:
+        from google.genai import types
+    except ImportError:
+        print("[AIProcessor] google-genai library missing types.")
+        return {}
 
     prompt = (
         f"{GWIS_SYSTEM_INSTRUCTION}\n\n"
@@ -114,38 +136,53 @@ def parse_schedule_from_image_or_text(image_bytes_or_path=None, text_content: st
         "- Isi ruang dan dosen jika ada di jadwal, jika tidak ada gunakan string kosong."
     )
 
-    if not api_key:
-        print("[AIProcessor] Warning: GEMINI_API_KEY not configured for Schedule OCR.")
+    contents = []
+    if image_bytes_or_path:
+        img_bytes = None
+        if isinstance(image_bytes_or_path, (str, Path)):
+            with open(image_bytes_or_path, "rb") as f:
+                img_bytes = f.read()
+        elif isinstance(image_bytes_or_path, bytes):
+            img_bytes = image_bytes_or_path
+        elif hasattr(image_bytes_or_path, "read"):
+            img_bytes = image_bytes_or_path.read()
+
+        if img_bytes:
+            contents = [
+                prompt,
+                types.Part.from_bytes(data=img_bytes, mime_type="image/jpeg")
+            ]
+    else:
+        contents = [f"{prompt}\nTeks Jadwal: {text_content}"]
+
+    if not contents:
+        return {}
+
+    resp_text = None
+    for model_name in GEMINI_MODELS:
+        try:
+            response = client.models.generate_content(
+                model=model_name,
+                contents=contents,
+            )
+            if response and response.text:
+                resp_text = response.text.strip()
+                break
+        except Exception as e:
+            print(f"[AIProcessor] Model '{model_name}' vision OCR failed ({e}). Trying next model...")
+
+    if not resp_text:
         return {}
 
     try:
-        resp_text = ""
-        import google.generativeai as genai
-        genai.configure(api_key=api_key)
-        model = genai.GenerativeModel("gemini-1.5-flash")
-
-        if image_bytes_or_path:
-            if isinstance(image_bytes_or_path, (str, Path)):
-                img = Image.open(image_bytes_or_path)
-            elif isinstance(image_bytes_or_path, bytes):
-                img = Image.open(io.BytesIO(image_bytes_or_path))
-            else:
-                img = image_bytes_or_path
-
-            response = model.generate_content([prompt, img])
-        else:
-            response = model.generate_content(f"{prompt}\nTeks Jadwal: {text_content}")
-
-        resp_text = response.text.strip()
         resp_text = re.sub(r"^```json\s*", "", resp_text)
         resp_text = re.sub(r"^```\s*", "", resp_text)
         resp_text = re.sub(r"\s*```$", "", resp_text)
 
         parsed_schedule = json.loads(resp_text)
         return parsed_schedule
-
     except Exception as e:
-        print(f"[AIProcessor] Error during schedule OCR/parsing ({e}).")
+        print(f"[AIProcessor] Error parsing schedule JSON ({e}).")
         return {}
 
 
