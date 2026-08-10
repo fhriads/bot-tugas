@@ -48,7 +48,8 @@ def add_user_deadline(user_id: int | str, matkul: str, tugas: str, deadline_str:
         "deadline": deadline_str.strip(),
         "created_at": datetime.now().strftime("%Y-%m-%d %H:%M"),
         "reminded_24h": False,
-        "reminded_3h": False
+        "reminded_3h": False,
+        "completed": False
     }
 
     user_list.append(new_item)
@@ -59,20 +60,54 @@ def add_user_deadline(user_id: int | str, matkul: str, tugas: str, deadline_str:
 
 
 def get_user_deadlines(user_id: int | str) -> list:
-    """Retrieves all active deadlines for a user, sorted by deadline date."""
+    """Retrieves active, uncompleted, and non-expired deadlines for a user sorted by date."""
     all_data = _load_all_deadlines()
     u_key = str(user_id)
     user_list = all_data.get(u_key, [])
 
-    # Filter out expired or sort active
+    now = datetime.now()
+    active_items = []
+
+    for item in user_list:
+        if item.get("completed", False):
+            continue
+        try:
+            dt = datetime.strptime(item["deadline"], "%Y-%m-%d %H:%M")
+            if dt < now:
+                # Expired deadline, auto-filter from active list
+                continue
+        except Exception:
+            pass
+        active_items.append(item)
+
     def parse_dt(d):
         try:
             return datetime.strptime(d["deadline"], "%Y-%m-%d %H:%M")
         except Exception:
             return datetime.max
 
-    user_list.sort(key=parse_dt)
-    return user_list
+    active_items.sort(key=parse_dt)
+    return active_items
+
+
+def mark_deadline_completed(user_id: int | str, deadline_id: str) -> dict | None:
+    """Marks a deadline as completed so it won't receive notifications or show in active list."""
+    all_data = _load_all_deadlines()
+    u_key = str(user_id)
+    user_list = all_data.get(u_key, [])
+
+    target_item = None
+    for d in user_list:
+        if d.get("id") == deadline_id:
+            d["completed"] = True
+            target_item = d
+            break
+
+    if target_item:
+        all_data[u_key] = user_list
+        _save_all_deadlines(all_data)
+        return target_item
+    return None
 
 
 def delete_user_deadline(user_id: int | str, deadline_id: str) -> bool:
@@ -92,11 +127,22 @@ def delete_user_deadline(user_id: int | str, deadline_id: str) -> bool:
 
 
 def get_all_active_deadlines() -> list:
-    """Returns flat list of all active deadlines for all users with user_id attached."""
+    """Returns flat list of all active, uncompleted, non-expired deadlines across all users."""
     all_data = _load_all_deadlines()
+    now = datetime.now()
     result = []
+
     for user_id_str, d_list in all_data.items():
         for item in d_list:
+            if item.get("completed", False):
+                continue
+            try:
+                dt = datetime.strptime(item["deadline"], "%Y-%m-%d %H:%M")
+                if dt < now:
+                    continue
+            except Exception:
+                pass
+
             item_copy = dict(item)
             item_copy["user_id"] = user_id_str
             result.append(item_copy)

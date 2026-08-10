@@ -18,8 +18,14 @@ from src.image_processor import process_image_pipeline
 from src.doc_generator import generate_docx
 from src.pdf_converter import convert_to_pdf, convert_scanned_pdf_to_docx
 from src.ai_processor import parse_deadline_with_ai, parse_schedule_from_image_or_text
-from src.deadline_manager import add_user_deadline, get_user_deadlines, delete_user_deadline
+from src.deadline_manager import (
+    add_user_deadline,
+    get_user_deadlines,
+    delete_user_deadline,
+    mark_deadline_completed,
+)
 from src.schedule_manager import save_user_schedule, get_user_schedule, get_daily_schedule, clear_user_schedule
+
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 TEMP_DIR = BASE_DIR / "temp"
@@ -728,6 +734,19 @@ async def handle_deadline_buttons(update: Update, context: ContextTypes.DEFAULT_
             await query.edit_message_text("✅ Deadline berhasil dihapus dari catatan Gwis!")
         else:
             await query.edit_message_text("⚠️ Gagal menghapus deadline.")
+
+    elif data.startswith("dl_done:"):
+        dl_id = data.split(":", 1)[1]
+        item = mark_deadline_completed(user_id, dl_id)
+        if item:
+            await query.edit_message_text(
+                f"🎉 *Hebat banget! Tugas {item['matkul']} sudah diselesaikan!* 🌸\n\n"
+                f"Gwis sudah tandai tugas ini selesai, jadi tidak akan ada pengingat notifikasi lagi ya! Semangat terus! ✨",
+                parse_mode="Markdown"
+            )
+        else:
+            await query.edit_message_text("✅ Tugas ini sudah ditandai selesai sebelumnya oleh Gwis! 🌸")
+
 
 
 # --- AI Class Schedule Workflow ---
