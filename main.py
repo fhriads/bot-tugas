@@ -12,6 +12,7 @@ from telegram.ext import (
     CallbackQueryHandler,
     filters,
 )
+from telegram.request import HTTPXRequest
 
 from src.config_manager import get_telegram_token, load_profile
 from create_template import generate_default_template, TEMPLATES_DIR, ASSETS_DIR
@@ -63,8 +64,9 @@ def start_health_check_server():
         server = HTTPServer(("0.0.0.0", port), HealthCheckHandler)
         print(f"[HealthCheck] Dummy HTTP server listening on port {port} for Render Free Web Service...")
         server.serve_forever()
-    except Exception as e:
-        print(f"[HealthCheck] Warning: HTTP server error: {e}")
+    except Exception:
+        # Ignore port binding errors silently when running on PythonAnywhere or local dev
+        pass
 
 
 def initialize_environment():
@@ -110,7 +112,29 @@ def main():
         print("Contoh: TELEGRAM_BOT_TOKEN=123456789:ABCdefGhIJKlmNoPQRsTUVwxyZ\n")
         sys.exit(1)
 
-    app = ApplicationBuilder().token(token).build()
+    # Configure proxy for PythonAnywhere or environments requiring HTTP proxy
+    proxy_url = os.getenv("HTTPS_PROXY") or os.getenv("HTTP_PROXY") or os.getenv("https_proxy") or os.getenv("http_proxy")
+    if not proxy_url and ("PYTHONANYWHERE_DOMAIN" in os.environ or "PYTHONANYWHERE_SITE" in os.environ):
+        proxy_url = "http://proxy.server:3128"
+
+    if proxy_url:
+        print(f"[Main] Configuring HTTP Proxy: {proxy_url}")
+        req = HTTPXRequest(
+            proxy=proxy_url,
+            connect_timeout=30.0,
+            read_timeout=30.0,
+            write_timeout=30.0,
+            media_write_timeout=60.0,
+        )
+        app = ApplicationBuilder().token(token).request(req).build()
+    else:
+        req = HTTPXRequest(
+            connect_timeout=20.0,
+            read_timeout=20.0,
+            write_timeout=20.0,
+            media_write_timeout=60.0,
+        )
+        app = ApplicationBuilder().token(token).request(req).build()
 
     # 1. Setup / Profile Conversation Handler
     setup_conv = ConversationHandler(
@@ -149,6 +173,8 @@ def main():
             ],
         },
         fallbacks=[CommandHandler("cancel", cancel_command)],
+        per_chat=True,
+        per_user=True,
         per_message=False,
     )
 
