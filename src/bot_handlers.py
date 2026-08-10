@@ -329,6 +329,7 @@ async def process_and_send_documents(update: Update, context: ContextTypes.DEFAU
         # Save last generated file paths in user_data for quick fetching
         context.user_data["last_docx_path"] = str(output_docx_path)
         context.user_data["last_pdf_path"] = str(output_pdf_path)
+        context.user_data["last_filename_stem"] = filename_stem
 
         display_matkul = f"{matkul} ({judul_tugas})" if judul_tugas else matkul
 
@@ -371,9 +372,9 @@ async def process_and_send_documents(update: Update, context: ContextTypes.DEFAU
             f"• *Jumlah Halaman:* {len(processed_images)}"
         )
 
-        # Prepare quick fetch buttons if only one format was sent
-        btn_word = [InlineKeyboardButton("📝 Kirimkan File Word (DOCX) Juga", callback_data=f"get_other_docx:{filename_stem}")]
-        btn_pdf = [InlineKeyboardButton("📄 Kirimkan File PDF Juga", callback_data=f"get_other_pdf:{filename_stem}")]
+        # Prepare quick fetch buttons if only one format was sent (fixed 64-byte limit)
+        btn_word = [InlineKeyboardButton("📝 Kirimkan File Word (DOCX) Juga", callback_data="get_other_docx")]
+        btn_pdf = [InlineKeyboardButton("📄 Kirimkan File PDF Juga", callback_data="get_other_pdf")]
 
         if selected_fmt == "fmt_docx":
             # Sent Word only -> Offer PDF button
@@ -436,16 +437,21 @@ async def get_other_file(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
 
-    data = query.data  # e.g. "get_other_docx:stem" or "get_other_pdf:stem"
-    parts = data.split(":", 1)
-    action = parts[0]
-    filename_stem = parts[1] if len(parts) > 1 else ""
-
+    data = query.data  # e.g. "get_other_docx" or "get_other_pdf" or legacy "get_other_docx:stem"
     user_id = query.from_user.id
 
+    parts = data.split(":", 1)
+    action = parts[0]
+    filename_stem = parts[1] if len(parts) > 1 else context.user_data.get("last_filename_stem", "")
+
     if action == "get_other_docx":
-        docx_path = OUTPUT_DIR / f"{filename_stem}.docx"
-        if docx_path.exists():
+        docx_path = None
+        if filename_stem:
+            docx_path = OUTPUT_DIR / f"{filename_stem}.docx"
+        elif context.user_data.get("last_docx_path"):
+            docx_path = Path(context.user_data["last_docx_path"])
+
+        if docx_path and docx_path.exists():
             with open(docx_path, "rb") as f_docx:
                 await context.bot.send_document(
                     chat_id=user_id,
@@ -458,10 +464,19 @@ async def get_other_file(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await query.message.reply_text("⚠️ Berkas Word tidak ditemukan di penyimpanan lokal.")
 
     elif action == "get_other_pdf":
-        pdf_path = OUTPUT_DIR / f"{filename_stem}.pdf"
-        docx_path = OUTPUT_DIR / f"{filename_stem}.docx"
+        pdf_path = None
+        docx_path = None
 
-        if not pdf_path.exists() and docx_path.exists():
+        if filename_stem:
+            pdf_path = OUTPUT_DIR / f"{filename_stem}.pdf"
+            docx_path = OUTPUT_DIR / f"{filename_stem}.docx"
+        else:
+            if context.user_data.get("last_pdf_path"):
+                pdf_path = Path(context.user_data["last_pdf_path"])
+            if context.user_data.get("last_docx_path"):
+                docx_path = Path(context.user_data["last_docx_path"])
+
+        if pdf_path and not pdf_path.exists() and docx_path and docx_path.exists():
             status_msg = await query.message.reply_text("🔄 *Mengonversi ke PDF...*", parse_mode="Markdown")
             try:
                 convert_to_pdf(docx_path, pdf_path)
@@ -470,7 +485,7 @@ async def get_other_file(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 await status_msg.edit_text(f"❌ Gagal mengonversi PDF: `{e}`", parse_mode="Markdown")
                 return
 
-        if pdf_path.exists():
+        if pdf_path and pdf_path.exists():
             with open(pdf_path, "rb") as f_pdf:
                 await context.bot.send_document(
                     chat_id=user_id,

@@ -31,6 +31,15 @@ def convert_to_pdf(docx_path: str | Path, pdf_path: str | Path) -> str:
 
     # Fallback conversion attempt: LibreOffice CLI
     libreoffice_bin = shutil.which("soffice") or shutil.which("libreoffice")
+    if not libreoffice_bin and sys.platform == "win32":
+        for possible_path in [
+            Path(r"C:\Program Files\LibreOffice\program\soffice.exe"),
+            Path(r"C:\Program Files (x86)\LibreOffice\program\soffice.exe"),
+        ]:
+            if possible_path.exists():
+                libreoffice_bin = str(possible_path)
+                break
+
     if libreoffice_bin:
         try:
             print(f"[PDFConverter] Attempting conversion using LibreOffice ({libreoffice_bin})...")
