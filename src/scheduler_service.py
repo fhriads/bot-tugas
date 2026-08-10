@@ -59,6 +59,23 @@ async def _check_deadlines_job(application: Application):
             except Exception as e:
                 print(f"[SchedulerService] Failed sending 3h notification ({e})")
 
+        # Check Urgent / Immediate Test threshold: deadline within 10 minutes (or just past) and not reminded
+        elif timedelta(minutes=-5) <= time_diff <= timedelta(minutes=10) and not (reminded_24h or reminded_3h):
+            msg = (
+                f"🚨 *Pengingat Urgent / Tes dari Gwis!* 🌸\n\n"
+                f"• *Matkul:* {matkul}\n"
+                f"• *Tugas:* {tugas}\n"
+                f"• *Deadline:* `{deadline_dt.strftime('%H:%M WIB')}` (Sangat Dekat!)\n\n"
+                f"Buruan diselesaikan dan dikirim tugasnya ya! Gwis bantu doakan! ✨"
+            )
+            try:
+                await application.bot.send_message(chat_id=int(user_id_str), text=msg, parse_mode="Markdown")
+                mark_deadline_reminded(user_id_str, item_id, "3h")
+                print(f"[SchedulerService] Sent urgent/test reminder to user {user_id_str} for {matkul}")
+            except Exception as e:
+                print(f"[SchedulerService] Failed sending urgent notification ({e})")
+
+
 
 async def scheduler_loop(application: Application):
     """Background asyncio loop running every 60 seconds."""
