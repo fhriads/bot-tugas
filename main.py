@@ -1,8 +1,12 @@
 import os
 import sys
 import threading
+import warnings
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from pathlib import Path
+
+# Suppress python-telegram-bot PTBUserWarning logs in console
+warnings.filterwarnings("ignore", category=UserWarning)
 
 from telegram.ext import (
     ApplicationBuilder,
@@ -16,7 +20,7 @@ from telegram.request import HTTPXRequest
 
 from src.config_manager import get_telegram_token, load_profile
 from create_template import generate_default_template, TEMPLATES_DIR, ASSETS_DIR
-from src.scheduler_service import start_deadline_scheduler
+from src.scheduler_service import post_init_scheduler
 from src.bot_handlers import (
     start_command,
     profile_command,
@@ -143,7 +147,7 @@ def main():
             write_timeout=30.0,
             media_write_timeout=60.0,
         )
-        app = ApplicationBuilder().token(token).request(req).build()
+        app = ApplicationBuilder().token(token).request(req).post_init(post_init_scheduler).build()
     else:
         req = HTTPXRequest(
             connect_timeout=20.0,
@@ -151,7 +155,7 @@ def main():
             write_timeout=20.0,
             media_write_timeout=60.0,
         )
-        app = ApplicationBuilder().token(token).request(req).build()
+        app = ApplicationBuilder().token(token).request(req).post_init(post_init_scheduler).build()
 
     # 1. Setup / Profile Conversation Handler
     setup_conv = ConversationHandler(
@@ -270,13 +274,10 @@ def main():
     app.add_handler(CallbackQueryHandler(handle_schedule_buttons, pattern="^sch_"))
     app.add_handler(CommandHandler("cancel", cancel_command))
 
-    # Start background scheduler for Gwis deadline notifications
-    start_deadline_scheduler(app)
-
     print("[Main] Gwis Bot Telegram siap dan mendengarkan pesan (Polling)...")
     app.run_polling()
 
 
-
 if __name__ == "__main__":
     main()
+()

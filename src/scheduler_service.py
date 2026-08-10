@@ -71,6 +71,16 @@ async def scheduler_loop(application: Application):
         await asyncio.sleep(60)
 
 
-def start_deadline_scheduler(application: Application):
-    """Launches the background scheduler task."""
+async def post_init_scheduler(application: Application):
+    """Post initialization hook for ApplicationBuilder to start background scheduler."""
     asyncio.create_task(scheduler_loop(application))
+
+
+def start_deadline_scheduler(application: Application):
+    """Launches the background scheduler task when event loop is running."""
+    try:
+        loop = asyncio.get_running_loop()
+        loop.create_task(scheduler_loop(application))
+    except RuntimeError:
+        pass
+
