@@ -77,11 +77,12 @@ def convert_scanned_pdf_to_docx(pdf_path: str | Path, output_docx_path: str | Pa
     """
     Converts a scanned PDF (or any PDF document) to a clean Word (.docx) document
     by rendering each page to a high-resolution image and building a structured DOCX.
-    Guarantees zero missing images, accurate page sequence, and no overlapping elements.
+    Guarantees zero missing images, accurate page sequence, no blank pages, and no overlapping elements.
     """
     import fitz  # PyMuPDF
     from docx import Document
-    from docx.shared import Inches
+    from docx.shared import Inches, Pt
+    from docx.enum.text import WD_ALIGN_PARAGRAPH
 
     pdf_path = Path(pdf_path).resolve()
     output_docx_path = Path(output_docx_path).resolve()
@@ -105,6 +106,10 @@ def convert_scanned_pdf_to_docx(pdf_path: str | Path, output_docx_path: str | Pa
         doc_pdf.close()
         raise ValueError("File PDF kosong atau tidak memiliki halaman!")
 
+    # Max boundaries for image to fit inside 0.5 in margins without triggering soft page break
+    max_w = Inches(6.8)
+    max_h = Inches(9.2)
+
     temp_images = []
     try:
         for page_num in range(total_pages):
@@ -116,11 +121,25 @@ def convert_scanned_pdf_to_docx(pdf_path: str | Path, output_docx_path: str | Pa
             pix.save(str(temp_img_path))
             temp_images.append(temp_img_path)
 
-            # Insert image fitting standard page width (7.5 inches inside 0.5 in margins)
-            doc_word.add_picture(str(temp_img_path), width=Inches(7.5))
-
-            if page_num < total_pages - 1:
+            if page_num > 0:
                 doc_word.add_page_break()
+
+            # Create zero-margin centered paragraph for image
+            p = doc_word.add_paragraph()
+            p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+            p.paragraph_format.space_before = Pt(0)
+            p.paragraph_format.space_after = Pt(0)
+            p.paragraph_format.line_spacing = 1.0
+
+            # Calculate strict aspect ratio scaling to guarantee image fits within single page height
+            img_w, img_h = pix.width, pix.height
+            aspect_ratio = img_w / img_h
+            calc_w = max_h * aspect_ratio
+
+            if calc_w <= max_w:
+                p.add_run().add_picture(str(temp_img_path), height=max_h)
+            else:
+                p.add_run().add_picture(str(temp_img_path), width=max_w)
 
         doc_word.save(str(output_docx_path))
         print(f"[PDFConverter] Successfully converted PDF to DOCX: {output_docx_path} ({total_pages} pages)")
@@ -133,4 +152,5 @@ def convert_scanned_pdf_to_docx(pdf_path: str | Path, output_docx_path: str | Pa
                     img_p.unlink()
                 except Exception:
                     pass
+
 
