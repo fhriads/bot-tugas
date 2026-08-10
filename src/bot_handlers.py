@@ -16,7 +16,7 @@ from telegram.ext import (
 from src.config_manager import load_profile, save_profile
 from src.image_processor import process_image_pipeline
 from src.doc_generator import generate_docx
-from src.pdf_converter import convert_to_pdf
+from src.pdf_converter import convert_to_pdf, convert_scanned_pdf_to_docx
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 TEMP_DIR = BASE_DIR / "temp"
@@ -25,8 +25,8 @@ OUTPUT_DIR = BASE_DIR / "output"
 # Conversation States for /setup
 SETUP_NAMA, SETUP_NIM = range(2)
 
-# Conversation States for /tugas
-WAITING_MATKUL, WAITING_JUDUL, WAITING_IMAGES, SELECT_FILTER, SELECT_FORMAT = range(2, 7)
+# Conversation States for /tugas & /convert
+WAITING_MATKUL, WAITING_JUDUL, WAITING_IMAGES, SELECT_FILTER, SELECT_FORMAT, WAITING_PDF_FILE = range(2, 8)
 
 
 def sanitize_filename(filename: str) -> str:
@@ -52,22 +52,31 @@ def cleanup_user_temp(user_id: int):
 
 
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handler for /start command."""
+    """Handler for /start command displaying main interactive menu with 2 buttons."""
     profile = load_profile()
     welcome_text = (
-        "🤖 *Selamat datang di Telegram Assignment Converter Bot!*\n\n"
-        "Bot ini membantu Anda memproses foto tugas tulisan tangan, memasukannya ke template Word (.docx), "
-        "dan mengonversinya menjadi PDF secara otomatis.\n\n"
-        "📋 *Data Profil Saat Ini:*\n"
-        f"• Nama: `{profile['nama']}`\n"
-        f"• NIM: `{profile['nim']}`\n\n"
-        "🛠 *Perintah Utama:*\n"
-        "/tugas atau /buat\\_tugas - Mulai membuat dokumen tugas baru\n"
-        "/setup atau /setprofile - Ubah profil Nama & NIM Anda\n"
-        "/profile - Lihat profil Anda saat ini\n"
-        "/cancel - Batalkan sesi pengerjaan\n"
+        "🤖 *Selamat datang di Telegram Assignment & Converter Bot!*\n\n"
+        "Silakan pilih layanan yang ingin Anda gunakan:\n\n"
+        "1. 📚 *Buat Tugas Baru:* Konversi foto tugas tulisan tangan ke template Word (.docx) & PDF.\n"
+        "2. 🔄 *Convert PDF ke Word:* Ubah file PDF (hasil CamScanner/foto) ke file Word (.docx) tanpa ada gambar hilang.\n\n"
+        f"📋 *Profil saat ini:* `{profile['nama']}` (`{profile['nim']}`)\n"
+        "Gunakan /setup jika ingin mengubah Nama & NIM."
     )
-    await update.message.reply_text(welcome_text, parse_mode="Markdown")
+    keyboard = [
+        [
+            InlineKeyboardButton("📚 Buat Tugas Baru", callback_data="menu_start_tugas")
+        ],
+        [
+            InlineKeyboardButton("🔄 Convert PDF ke Word (.docx)", callback_data="menu_start_convert")
+        ]
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+
+    if update.callback_query:
+        await update.callback_query.answer()
+        await update.callback_query.message.reply_text(welcome_text, reply_markup=reply_markup, parse_mode="Markdown")
+    else:
+        await update.message.reply_text(welcome_text, reply_markup=reply_markup, parse_mode="Markdown")
 
 
 async def profile_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -130,12 +139,17 @@ async def tugas_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     context.user_data["images"] = []
     context.user_data["judul_tugas"] = ""
-    
-    await update.message.reply_text(
+
+    msg_text = (
         "📚 *Inisialisasi Tugas Baru*\n\n"
-        "Silakan masukkan *Nama Mata Kuliah* (contoh: `Kalkulus II`):",
-        parse_mode="Markdown"
+        "Silakan masukkan *Nama Mata Kuliah* (contoh: `Kalkulus II`):"
     )
+    if update.callback_query:
+        await update.callback_query.answer()
+        await update.callback_query.message.reply_text(msg_text, parse_mode="Markdown")
+    else:
+        await update.message.reply_text(msg_text, parse_mode="Markdown")
+
     return WAITING_MATKUL
 
 
@@ -508,3 +522,83 @@ async def cancel_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         reply_markup=ReplyKeyboardRemove()
     )
     return ConversationHandler.END
+
+
+# --- PDF to Word Conversion Workflow ---
+
+async def convert_pdf_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Starts the /convert PDF to DOCX flow."""
+    user_id = update.effective_user.id
+    cleanup_user_temp(user_id)
+
+    msg_text = (
+        "🔄 *Konversi PDF ke Word (.docx)*\n\n"
+        "Silakan kirimkan berkas *PDF* (misal hasil scan CamScanner / dokumen tugas) yang ingin dikonversi ke Word.\n\n"
+        "💡 Ketik /cancel jika ingin membatalkan."
+    )
+
+    if update.callback_query:
+        await update.callback_query.answer()
+        await update.callback_query.message.reply_text(msg_text, parse_mode="Markdown")
+    else:
+        await update.message.reply_text(msg_text, parse_mode="Markdown")
+
+    return WAITING_PDF_FILE
+
+
+async def receive_pdf_file(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Receives uploaded PDF document and converts it to DOCX using PyMuPDF."""
+    user_id = update.effective_user.id
+    doc = update.message.document
+
+    if not doc or not (doc.mime_type == "application/pdf" or doc.file_name.lower().endswith(".pdf")):
+        await update.message.reply_text(
+            "⚠️ Berkas yang Anda kirimkan bukan format PDF!\n"
+            "Harap kirimkan dokumen dengan format `.pdf`."
+        )
+        return WAITING_PDF_FILE
+
+    raw_dir = TEMP_DIR / "raw" / str(user_id)
+    raw_dir.mkdir(parents=True, exist_ok=True)
+
+    input_pdf_path = raw_dir / doc.file_name
+    pdf_stem = Path(doc.file_name).stem
+    output_docx_path = OUTPUT_DIR / f"{pdf_stem}_converted.docx"
+
+    status_msg = await update.message.reply_text("🔄 *Mengunduh dan mengonversi PDF ke Word (.docx)...*", parse_mode="Markdown")
+
+    try:
+        # Download PDF file
+        pdf_file = await doc.get_file()
+        await pdf_file.download_to_drive(input_pdf_path)
+
+        # Convert PDF to DOCX using PyMuPDF (fitz)
+        convert_scanned_pdf_to_docx(input_pdf_path, output_docx_path)
+
+        # Send converted DOCX back to user
+        await status_msg.edit_text("🔄 *Mengirimkan file Word (.docx)...*", parse_mode="Markdown")
+
+        with open(output_docx_path, "rb") as f_docx:
+            await context.bot.send_document(
+                chat_id=user_id,
+                document=f_docx,
+                filename=output_docx_path.name,
+                caption=(
+                    "✅ *Konversi PDF ke Word Berhasil!*\n\n"
+                    "• Semua gambar & halaman dari PDF telah dimasukkan ke file Word tanpa ada yang hilang atau bertumpuk."
+                ),
+                parse_mode="Markdown"
+            )
+        await status_msg.delete()
+
+    except Exception as e:
+        print(f"[BotHandler] Error converting PDF to DOCX: {e}")
+        await status_msg.edit_text(
+            f"❌ *Terjadi Kesalahan saat Konversi PDF:*\n`{str(e)}`",
+            parse_mode="Markdown"
+        )
+    finally:
+        cleanup_user_temp(user_id)
+
+    return ConversationHandler.END
+

@@ -32,6 +32,8 @@ from src.bot_handlers import (
     choose_filter,
     process_and_send_documents,
     get_other_file,
+    convert_pdf_start,
+    receive_pdf_file,
     SETUP_NAMA,
     SETUP_NIM,
     WAITING_MATKUL,
@@ -39,6 +41,7 @@ from src.bot_handlers import (
     WAITING_IMAGES,
     SELECT_FILTER,
     SELECT_FORMAT,
+    WAITING_PDF_FILE,
 )
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -154,6 +157,7 @@ def main():
         entry_points=[
             CommandHandler("tugas", tugas_start),
             CommandHandler("buat_tugas", tugas_start),
+            CallbackQueryHandler(tugas_start, pattern="^menu_start_tugas$"),
         ],
         states={
             WAITING_MATKUL: [MessageHandler(filters.TEXT & ~filters.COMMAND, tugas_matkul)],
@@ -178,11 +182,30 @@ def main():
         per_message=False,
     )
 
+    # 3. PDF to Word Conversion Conversation Handler
+    convert_conv = ConversationHandler(
+        entry_points=[
+            CommandHandler("convert", convert_pdf_start),
+            CommandHandler("pdf2word", convert_pdf_start),
+            CallbackQueryHandler(convert_pdf_start, pattern="^menu_start_convert$"),
+        ],
+        states={
+            WAITING_PDF_FILE: [
+                MessageHandler(filters.Document.ALL, receive_pdf_file)
+            ],
+        },
+        fallbacks=[CommandHandler("cancel", cancel_command)],
+        per_chat=True,
+        per_user=True,
+        per_message=False,
+    )
+
     # Register handlers
     app.add_handler(CommandHandler("start", start_command))
     app.add_handler(CommandHandler("profile", profile_command))
     app.add_handler(setup_conv)
     app.add_handler(tugas_conv)
+    app.add_handler(convert_conv)
     app.add_handler(CallbackQueryHandler(get_other_file, pattern="^get_other_"))
     app.add_handler(CommandHandler("cancel", cancel_command))
 
