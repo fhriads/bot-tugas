@@ -53,7 +53,8 @@ def cleanup_user_temp(user_id: int):
 
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handler for /start command displaying main interactive menu with 2 buttons."""
-    profile = load_profile()
+    user_id = update.effective_user.id
+    profile = load_profile(user_id)
     welcome_text = (
         "🤖 *Selamat datang di Telegram Assignment & Converter Bot!*\n\n"
         "Silakan pilih layanan yang ingin Anda gunakan:\n\n"
@@ -81,7 +82,8 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def profile_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handler for /profile command."""
-    profile = load_profile()
+    user_id = update.effective_user.id
+    profile = load_profile(user_id)
     text = (
         "👤 *Profil Pengguna Tersimpan:*\n\n"
         f"• *Nama:* {profile['nama']}\n"
@@ -115,10 +117,11 @@ async def setup_nama(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def setup_nim(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Receives NIM and saves profile."""
+    user_id = update.effective_user.id
     nim = update.message.text.strip()
     nama = context.user_data.get("setup_nama", "")
 
-    saved = save_profile(nama, nim)
+    saved = save_profile(user_id, nama, nim)
 
     await update.message.reply_text(
         "✅ *Profil berhasil disimpan!*\n\n"
@@ -300,7 +303,7 @@ async def process_and_send_documents(update: Update, context: ContextTypes.DEFAU
     images = context.user_data.get("images", [])
     use_scanner_effect = context.user_data.get("use_scanner_effect", False)
 
-    profile = load_profile()
+    profile = load_profile(user_id)
     matkul = context.user_data.get("matkul", "Mata Kuliah")
     judul_tugas = context.user_data.get("judul_tugas", "").strip()
     tanggal_str = datetime.now().strftime("%d %B %Y")
