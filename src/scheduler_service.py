@@ -113,12 +113,13 @@ async def setup_bot_commands(application: Application):
         BotCommand("start", "🌸 Menu Utama Gwis"),
         BotCommand("tugas", "📚 Buat Tugas Baru (Word/PDF)"),
         BotCommand("convert", "🔄 Convert PDF ke Word (.docx)"),
-        BotCommand("deadline", "⏰ Pengingat Deadline Tugas (AI)"),
-        BotCommand("jadwal", "📅 Jadwal Kuliah & Ruangan (AI/Foto)"),
+        BotCommand("deadline", "⏰ Pengingat Deadline Tugas"),
+        BotCommand("jadwal", "📅 Jadwal Kuliah & Ruangan"),
         BotCommand("profile", "👤 Lihat Profil Pengguna"),
         BotCommand("setup", "✏️ Ubah Nama & NIM"),
         BotCommand("cancel", "❌ Batal / Keluar Sesi"),
     ]
+
     try:
         await application.bot.set_my_commands(commands)
         print("[Main] Persistent Telegram Bot command menu button registered successfully!")

@@ -81,10 +81,11 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             InlineKeyboardButton("🔄 Convert PDF ke Word", callback_data="menu_start_convert")
         ],
         [
-            InlineKeyboardButton("⏰ Deadline Tugas (AI)", callback_data="menu_start_deadline"),
-            InlineKeyboardButton("📅 Jadwal Kuliah (AI/Foto)", callback_data="menu_start_schedule")
+            InlineKeyboardButton("⏰ Deadline Tugas", callback_data="menu_start_deadline"),
+            InlineKeyboardButton("📅 Jadwal Kuliah", callback_data="menu_start_schedule")
         ]
     ]
+
     reply_markup = InlineKeyboardMarkup(keyboard)
 
     if update.callback_query:
@@ -618,7 +619,7 @@ async def deadline_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "Ketik deadline kamu pakai bahasa santai aja, misal:\n"
         "`tugas kalkulus 2 kumpul besok jam 11 malam`\n"
         "`tugas praktikum web bab 3 deadline jumat depan jam 23.59`\n\n"
-        "Nanti Gwis & Gemini AI bakal otomatis mencatatnya! ✨"
+        "Nanti Gwis bakal otomatis mencatatnya! ✨"
     )
 
     keyboard = [
@@ -643,9 +644,10 @@ async def deadline_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def process_deadline_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Processes natural language deadline input via Gemini AI and requests confirmation."""
+    """Processes natural language deadline input and requests confirmation."""
     user_text = update.message.text.strip()
-    status_msg = await update.message.reply_text("🌸 *Gwis lagi memproses input deadline kamu pakai Gemini AI...* ✨", parse_mode="Markdown")
+    status_msg = await update.message.reply_text("🌸 *Gwis lagi mencatat deadline kamu...* ✨", parse_mode="Markdown")
+
 
     parsed = parse_deadline_with_ai(user_text)
     context.user_data["draft_deadline"] = parsed
@@ -831,7 +833,7 @@ async def schedule_update_prompt(update: Update, context: ContextTypes.DEFAULT_T
         "🔄 *Update / Perbarui Jadwal Kuliah* 🌸\n\n"
         "Silakan **kirim foto / screenshot tabel jadwal kuliah kamu** (dari portal kampus/KRS/foto papan jadwal), "
         "atau ketik teks jadwal kamu secara bebas!\n\n"
-        "Gwis & Gemini AI bakal membaca dan menyusunnya secara otomatis! ✨\n\n"
+        "Gwis bakal membaca dan menyusunnya secara otomatis! ✨\n\n"
         "💡 Ketik /cancel jika ingin membatalkan."
     )
     await query.message.reply_text(msg_text, parse_mode="Markdown")
@@ -839,8 +841,9 @@ async def schedule_update_prompt(update: Update, context: ContextTypes.DEFAULT_T
 
 
 async def process_schedule_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Processes schedule screenshot photo/document or text via Gemini Vision AI and requests confirmation."""
-    status_msg = await update.message.reply_text("🌸 *Gwis & Gemini AI lagi membaca foto/teks jadwal kamu...* ✨", parse_mode="Markdown")
+    """Processes schedule screenshot photo/document or text and requests confirmation."""
+    status_msg = await update.message.reply_text("🌸 *Gwis lagi membaca foto/teks jadwal kamu...* ✨", parse_mode="Markdown")
+
 
     img_data = None
     text_content = None
