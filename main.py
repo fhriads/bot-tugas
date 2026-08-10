@@ -16,6 +16,7 @@ from telegram.request import HTTPXRequest
 
 from src.config_manager import get_telegram_token, load_profile
 from create_template import generate_default_template, TEMPLATES_DIR, ASSETS_DIR
+from src.scheduler_service import start_deadline_scheduler
 from src.bot_handlers import (
     start_command,
     profile_command,
@@ -34,6 +35,17 @@ from src.bot_handlers import (
     get_other_file,
     convert_pdf_start,
     receive_pdf_file,
+    deadline_start,
+    process_deadline_input,
+    confirm_save_deadline,
+    cancel_deadline_draft,
+    handle_deadline_buttons,
+    schedule_start,
+    schedule_update_prompt,
+    process_schedule_input,
+    confirm_save_schedule,
+    cancel_schedule_draft,
+    handle_schedule_buttons,
     SETUP_NAMA,
     SETUP_NIM,
     WAITING_MATKUL,
@@ -42,6 +54,8 @@ from src.bot_handlers import (
     SELECT_FILTER,
     SELECT_FORMAT,
     WAITING_PDF_FILE,
+    WAITING_DEADLINE_INPUT,
+    WAITING_SCHEDULE_INPUT,
 )
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -100,7 +114,7 @@ def main():
         sys.stdout.reconfigure(encoding="utf-8")
 
     print("=" * 60)
-    print(" [BOT] Starting Telegram Assignment Converter Bot ")
+    print(" [BOT] Starting Gwis Telegram Assignment & Converter Bot ")
     print("=" * 60)
 
     # Start dummy HTTP health check server in background thread for Render Free Web Service
@@ -200,17 +214,68 @@ def main():
         per_message=False,
     )
 
+    # 4. AI Deadline Reminder Conversation Handler
+    deadline_conv = ConversationHandler(
+        entry_points=[
+            CommandHandler("deadline", deadline_start),
+            CommandHandler("tambah_deadline", deadline_start),
+            CallbackQueryHandler(deadline_start, pattern="^menu_start_deadline$"),
+        ],
+        states={
+            WAITING_DEADLINE_INPUT: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, process_deadline_input),
+                CallbackQueryHandler(confirm_save_deadline, pattern="^dl_confirm_save$"),
+                CallbackQueryHandler(cancel_deadline_draft, pattern="^dl_cancel$"),
+                CallbackQueryHandler(handle_deadline_buttons, pattern="^dl_"),
+            ],
+        },
+        fallbacks=[CommandHandler("cancel", cancel_command)],
+        per_chat=True,
+        per_user=True,
+        per_message=False,
+    )
+
+    # 5. AI Class Schedule Conversation Handler
+    schedule_conv = ConversationHandler(
+        entry_points=[
+            CommandHandler("jadwal", schedule_start),
+            CommandHandler("schedule", schedule_start),
+            CallbackQueryHandler(schedule_start, pattern="^menu_start_schedule$"),
+            CallbackQueryHandler(schedule_update_prompt, pattern="^sch_update_prompt$"),
+        ],
+        states={
+            WAITING_SCHEDULE_INPUT: [
+                MessageHandler(filters.PHOTO | filters.Document.ALL | filters.TEXT, process_schedule_input),
+                CallbackQueryHandler(confirm_save_schedule, pattern="^sch_confirm_save$"),
+                CallbackQueryHandler(cancel_schedule_draft, pattern="^sch_cancel$"),
+                CallbackQueryHandler(handle_schedule_buttons, pattern="^sch_"),
+            ],
+        },
+        fallbacks=[CommandHandler("cancel", cancel_command)],
+        per_chat=True,
+        per_user=True,
+        per_message=False,
+    )
+
     # Register handlers
     app.add_handler(CommandHandler("start", start_command))
     app.add_handler(CommandHandler("profile", profile_command))
     app.add_handler(setup_conv)
     app.add_handler(tugas_conv)
     app.add_handler(convert_conv)
+    app.add_handler(deadline_conv)
+    app.add_handler(schedule_conv)
     app.add_handler(CallbackQueryHandler(get_other_file, pattern="^get_other_"))
+    app.add_handler(CallbackQueryHandler(handle_deadline_buttons, pattern="^dl_"))
+    app.add_handler(CallbackQueryHandler(handle_schedule_buttons, pattern="^sch_"))
     app.add_handler(CommandHandler("cancel", cancel_command))
 
-    print("[Main] Bot Telegram siap dan mendengarkan pesan (Polling)...")
+    # Start background scheduler for Gwis deadline notifications
+    start_deadline_scheduler(app)
+
+    print("[Main] Gwis Bot Telegram siap dan mendengarkan pesan (Polling)...")
     app.run_polling()
+
 
 
 if __name__ == "__main__":

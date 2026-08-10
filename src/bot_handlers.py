@@ -17,6 +17,9 @@ from src.config_manager import load_profile, save_profile
 from src.image_processor import process_image_pipeline
 from src.doc_generator import generate_docx
 from src.pdf_converter import convert_to_pdf, convert_scanned_pdf_to_docx
+from src.ai_processor import parse_deadline_with_ai, parse_schedule_from_image_or_text
+from src.deadline_manager import add_user_deadline, get_user_deadlines, delete_user_deadline
+from src.schedule_manager import save_user_schedule, get_user_schedule, get_daily_schedule, clear_user_schedule
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 TEMP_DIR = BASE_DIR / "temp"
@@ -25,14 +28,21 @@ OUTPUT_DIR = BASE_DIR / "output"
 # Conversation States for /setup
 SETUP_NAMA, SETUP_NIM = range(2)
 
-# Conversation States for /tugas & /convert
-WAITING_MATKUL, WAITING_JUDUL, WAITING_IMAGES, SELECT_FILTER, SELECT_FORMAT, WAITING_PDF_FILE = range(2, 8)
+# Conversation States for /tugas, /convert, /deadline, /jadwal
+(
+    WAITING_MATKUL,
+    WAITING_JUDUL,
+    WAITING_IMAGES,
+    SELECT_FILTER,
+    SELECT_FORMAT,
+    WAITING_PDF_FILE,
+    WAITING_DEADLINE_INPUT,
+    WAITING_SCHEDULE_INPUT,
+) = range(2, 10)
 
 
 def sanitize_filename(filename: str) -> str:
-    """
-    Sanitizes string to make it safe for OS file paths by removing illegal characters.
-    """
+    """Sanitizes string to make it safe for OS file paths by removing illegal characters."""
     sanitized = re.sub(r'[\/:*?"<>|]', '_', filename)
     sanitized = re.sub(r'\s+', '_', sanitized)
     sanitized = re.sub(r'_+', '_', sanitized)
@@ -40,9 +50,7 @@ def sanitize_filename(filename: str) -> str:
 
 
 def cleanup_user_temp(user_id: int):
-    """
-    Cleans up user specific temporary raw and processed folders.
-    """
+    """Cleans up user specific temporary raw and processed folders."""
     raw_dir = TEMP_DIR / "raw" / str(user_id)
     proc_dir = TEMP_DIR / "processed" / str(user_id)
     if raw_dir.exists():
@@ -52,23 +60,23 @@ def cleanup_user_temp(user_id: int):
 
 
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handler for /start command displaying main interactive menu with 2 buttons."""
+    """Handler for /start command displaying main interactive menu with 4 buttons (Gwis Persona)."""
     user_id = update.effective_user.id
     profile = load_profile(user_id)
     welcome_text = (
-        "🤖 *Selamat datang di Telegram Assignment & Converter Bot!*\n\n"
-        "Silakan pilih layanan yang ingin Anda gunakan:\n\n"
-        "1. 📚 *Buat Tugas Baru:* Konversi foto tugas tulisan tangan ke template Word (.docx) & PDF.\n"
-        "2. 🔄 *Convert PDF ke Word:* Ubah file PDF (hasil CamScanner/foto) ke file Word (.docx) tanpa ada gambar hilang.\n\n"
-        f"📋 *Profil saat ini:* `{profile['nama']}` (`{profile['nim']}`)\n"
-        "Gunakan /setup jika ingin mengubah Nama & NIM."
+        "🌸 *Halo! Aku Gwis, Asisten Perkuliahan Kamu!* ✨\n\n"
+        "Gwis siap bantuin kamu buat dokumen tugas, konversi file PDF, catat pengingat deadline, dan atur jadwal kuliah harian kamu!\n\n"
+        f"📋 *Profil Kamu:* `{profile['nama']}` (`{profile['nim']}`)\n\n"
+        "Silakan pilih layanan yang ingin kamu gunakan:"
     )
     keyboard = [
         [
-            InlineKeyboardButton("📚 Buat Tugas Baru", callback_data="menu_start_tugas")
+            InlineKeyboardButton("📚 Buat Tugas Baru", callback_data="menu_start_tugas"),
+            InlineKeyboardButton("🔄 Convert PDF ke Word", callback_data="menu_start_convert")
         ],
         [
-            InlineKeyboardButton("🔄 Convert PDF ke Word (.docx)", callback_data="menu_start_convert")
+            InlineKeyboardButton("⏰ Deadline Tugas (AI)", callback_data="menu_start_deadline"),
+            InlineKeyboardButton("📅 Jadwal Kuliah (AI/Foto)", callback_data="menu_start_schedule")
         ]
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
@@ -85,10 +93,10 @@ async def profile_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     profile = load_profile(user_id)
     text = (
-        "👤 *Profil Pengguna Tersimpan:*\n\n"
+        "👤 *Profil Pengguna Tersimpan (Gwis):* 🌸\n\n"
         f"• *Nama:* {profile['nama']}\n"
         f"• *NIM:* {profile['nim']}\n\n"
-        "Gunakan perintah /setup untuk memperbarui profil ini."
+        "Gunakan perintah /setup jika kamu ingin memperbarui Nama & NIM."
     )
     await update.message.reply_text(text, parse_mode="Markdown")
 
@@ -98,8 +106,8 @@ async def profile_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def setup_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Starts the /setup conversation flow."""
     await update.message.reply_text(
-        "✏️ *Pengaturan Profil Pengguna*\n\n"
-        "Silakan masukkan *Nama Lengkap* Anda:",
+        "✏️ *Pengaturan Profil Pengguna* 🌸\n\n"
+        "Silakan masukkan *Nama Lengkap* kamu:",
         parse_mode="Markdown"
     )
     return SETUP_NAMA
@@ -109,7 +117,7 @@ async def setup_nama(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Receives Nama and asks for NIM."""
     context.user_data["setup_nama"] = update.message.text.strip()
     await update.message.reply_text(
-        "Silakan masukkan *NIM (Nomor Induk Mahasiswa)* Anda:",
+        "Silakan masukkan *NIM (Nomor Induk Mahasiswa)* kamu:",
         parse_mode="Markdown"
     )
     return SETUP_NIM
@@ -124,10 +132,10 @@ async def setup_nim(update: Update, context: ContextTypes.DEFAULT_TYPE):
     saved = save_profile(user_id, nama, nim)
 
     await update.message.reply_text(
-        "✅ *Profil berhasil disimpan!*\n\n"
+        "✅ *Profil berhasil disimpan oleh Gwis!* 🌸\n\n"
         f"• *Nama:* {saved['nama']}\n"
         f"• *NIM:* {saved['nim']}\n\n"
-        "Ketik /tugas untuk mulai membuat dokumen tugas.",
+        "Ketik /tugas untuk mulai membuat dokumen tugas baru.",
         parse_mode="Markdown"
     )
     return ConversationHandler.END
@@ -137,14 +145,14 @@ async def setup_nim(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def tugas_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Starts the /tugas submission conversation flow."""
-    user_id = update.effective_user.id
+    user_id = update.effective_user.id if update.effective_user else update.callback_query.from_user.id
     cleanup_user_temp(user_id)
 
     context.user_data["images"] = []
     context.user_data["judul_tugas"] = ""
 
     msg_text = (
-        "📚 *Inisialisasi Tugas Baru*\n\n"
+        "📚 *Inisialisasi Tugas Baru bersama Gwis* 🌸\n\n"
         "Silakan masukkan *Nama Mata Kuliah* (contoh: `Kalkulus II`):"
     )
     if update.callback_query:
@@ -361,7 +369,6 @@ async def process_and_send_documents(update: Update, context: ContextTypes.DEFAU
 
         # Step 3: Convert to PDF if required
         need_pdf = selected_fmt in ["fmt_pdf", "fmt_both"]
-        need_docx = selected_fmt in ["fmt_docx", "fmt_both"]
 
         if need_pdf:
             await query.edit_message_text(
@@ -380,7 +387,7 @@ async def process_and_send_documents(update: Update, context: ContextTypes.DEFAU
         tugas_text = f"\n• *Tugas:* {judul_tugas}" if judul_tugas else ""
 
         caption_text = (
-            f"✅ *Dokumen Tugas Berhasil Dibuat!*\n\n"
+            f"✅ *Dokumen Tugas Berhasil Dibuat oleh Gwis!* 🌸\n\n"
             f"• *Nama:* {profile['nama']}\n"
             f"• *NIM:* {profile['nim']}\n"
             f"• *Matkul:* {matkul}"
@@ -389,12 +396,10 @@ async def process_and_send_documents(update: Update, context: ContextTypes.DEFAU
             f"• *Jumlah Halaman:* {len(processed_images)}"
         )
 
-        # Prepare quick fetch buttons if only one format was sent (fixed 64-byte limit)
         btn_word = [InlineKeyboardButton("📝 Kirimkan File Word (DOCX) Juga", callback_data="get_other_docx")]
         btn_pdf = [InlineKeyboardButton("📄 Kirimkan File PDF Juga", callback_data="get_other_pdf")]
 
         if selected_fmt == "fmt_docx":
-            # Sent Word only -> Offer PDF button
             with open(output_docx_path, "rb") as f_docx:
                 await context.bot.send_document(
                     chat_id=user_id,
@@ -405,7 +410,6 @@ async def process_and_send_documents(update: Update, context: ContextTypes.DEFAU
                     parse_mode="Markdown"
                 )
         elif selected_fmt == "fmt_pdf":
-            # Sent PDF only -> Offer Word button
             with open(output_pdf_path, "rb") as f_pdf:
                 await context.bot.send_document(
                     chat_id=user_id,
@@ -416,7 +420,6 @@ async def process_and_send_documents(update: Update, context: ContextTypes.DEFAU
                     parse_mode="Markdown"
                 )
         else:
-            # Sent Both
             with open(output_docx_path, "rb") as f_docx:
                 await context.bot.send_document(
                     chat_id=user_id,
@@ -448,13 +451,11 @@ async def process_and_send_documents(update: Update, context: ContextTypes.DEFAU
 
 
 async def get_other_file(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """
-    Callback handler for fetching the alternative format (DOCX or PDF) after task completion.
-    """
+    """Callback handler for fetching the alternative format (DOCX or PDF) after task completion."""
     query = update.callback_query
     await query.answer()
 
-    data = query.data  # e.g. "get_other_docx" or "get_other_pdf" or legacy "get_other_docx:stem"
+    data = query.data
     user_id = query.from_user.id
 
     parts = data.split(":", 1)
@@ -515,27 +516,15 @@ async def get_other_file(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await query.message.reply_text("⚠️ Berkas PDF tidak ditemukan.")
 
 
-async def cancel_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Cancels current active conversation and cleans up temp files."""
-    user_id = update.effective_user.id
-    cleanup_user_temp(user_id)
-
-    await update.message.reply_text(
-        "❌ Sesi dibatalkan. Folder sementara telah dibersihkan.",
-        reply_markup=ReplyKeyboardRemove()
-    )
-    return ConversationHandler.END
-
-
 # --- PDF to Word Conversion Workflow ---
 
 async def convert_pdf_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Starts the /convert PDF to DOCX flow."""
-    user_id = update.effective_user.id
+    user_id = update.effective_user.id if update.effective_user else update.callback_query.from_user.id
     cleanup_user_temp(user_id)
 
     msg_text = (
-        "🔄 *Konversi PDF ke Word (.docx)*\n\n"
+        "🔄 *Konversi PDF ke Word (.docx) bersama Gwis* 🌸\n\n"
         "Silakan kirimkan berkas *PDF* (misal hasil scan CamScanner / dokumen tugas) yang ingin dikonversi ke Word.\n\n"
         "💡 Ketik /cancel jika ingin membatalkan."
     )
@@ -556,7 +545,7 @@ async def receive_pdf_file(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if not doc or not (doc.mime_type == "application/pdf" or doc.file_name.lower().endswith(".pdf")):
         await update.message.reply_text(
-            "⚠️ Berkas yang Anda kirimkan bukan format PDF!\n"
+            "⚠️ Berkas yang kamu kirimkan bukan format PDF!\n"
             "Harap kirimkan dokumen dengan format `.pdf`."
         )
         return WAITING_PDF_FILE
@@ -571,14 +560,11 @@ async def receive_pdf_file(update: Update, context: ContextTypes.DEFAULT_TYPE):
     status_msg = await update.message.reply_text("🔄 *Mengunduh dan mengonversi PDF ke Word (.docx)...*", parse_mode="Markdown")
 
     try:
-        # Download PDF file
         pdf_file = await doc.get_file()
         await pdf_file.download_to_drive(input_pdf_path)
 
-        # Convert PDF to DOCX using PyMuPDF (fitz)
         convert_scanned_pdf_to_docx(input_pdf_path, output_docx_path)
 
-        # Send converted DOCX back to user
         await status_msg.edit_text("🔄 *Mengirimkan file Word (.docx)...*", parse_mode="Markdown")
 
         with open(output_docx_path, "rb") as f_docx:
@@ -587,7 +573,7 @@ async def receive_pdf_file(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 document=f_docx,
                 filename=output_docx_path.name,
                 caption=(
-                    "✅ *Konversi PDF ke Word Berhasil!*\n\n"
+                    "✅ *Konversi PDF ke Word Berhasil oleh Gwis!* 🌸\n\n"
                     "• Semua gambar & halaman dari PDF telah dimasukkan ke file Word tanpa ada yang hilang atau bertumpuk."
                 ),
                 parse_mode="Markdown"
@@ -605,3 +591,343 @@ async def receive_pdf_file(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     return ConversationHandler.END
 
+
+# --- AI Deadline Reminder Workflow ---
+
+async def deadline_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Starts the /deadline flow with Gwis Persona."""
+    user_id = update.effective_user.id if update.effective_user else update.callback_query.from_user.id
+    deadlines = get_user_deadlines(user_id)
+
+    msg_text = "⏰ *Asisten Deadline Tugas (Gwis)* 🌸\n\n"
+    if deadlines:
+        msg_text += "📋 *Daftar Deadline Aktif Kamu:*\n"
+        for idx, d in enumerate(deadlines, 1):
+            msg_text += f"{idx}. *{d['matkul']}* - {d['tugas']}\n   ⏱ `{d['deadline']}`\n"
+        msg_text += "\n"
+    else:
+        msg_text += "Belum ada deadline tugas yang tersimpan nih.\n\n"
+
+    msg_text += (
+        "Ketik deadline kamu pakai bahasa santai aja, misal:\n"
+        "`tugas kalkulus 2 kumpul besok jam 11 malam`\n"
+        "`tugas praktikum web bab 3 deadline jumat depan jam 23.59`\n\n"
+        "Nanti Gwis & Gemini AI bakal otomatis mencatatnya! ✨"
+    )
+
+    keyboard = [
+        [
+            InlineKeyboardButton("📋 Lihat Semua Deadline", callback_data="dl_view_all"),
+            InlineKeyboardButton("🗑 Hapus Deadline", callback_data="dl_delete_menu")
+        ]
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+
+    if update.callback_query:
+        await update.callback_query.answer()
+        await update.callback_query.message.reply_text(msg_text, reply_markup=reply_markup, parse_mode="Markdown")
+    else:
+        await update.message.reply_text(msg_text, reply_markup=reply_markup, parse_mode="Markdown")
+
+    return WAITING_DEADLINE_INPUT
+
+
+async def process_deadline_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Processes natural language deadline input via Gemini AI and requests confirmation."""
+    user_text = update.message.text.strip()
+    status_msg = await update.message.reply_text("🌸 *Gwis lagi memproses input deadline kamu pakai Gemini AI...* ✨", parse_mode="Markdown")
+
+    parsed = parse_deadline_with_ai(user_text)
+    context.user_data["draft_deadline"] = parsed
+
+    await status_msg.delete()
+
+    preview_text = (
+        "🌸 *Pratinjau Hasil Analisis Gwis:* ✨\n\n"
+        f"• *Mata Kuliah:* {parsed['matkul']}\n"
+        f"• *Nama/Detail Tugas:* {parsed['tugas']}\n"
+        f"• *Batas Waktu (Deadline):* `{parsed['deadline']}`\n\n"
+        "Apakah data deadline di atas sudah sesuai?"
+    )
+    keyboard = [
+        [
+            InlineKeyboardButton("✅ Simpan Deadline", callback_data="dl_confirm_save"),
+            InlineKeyboardButton("❌ Batal", callback_data="dl_cancel")
+        ]
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+
+    await update.message.reply_text(preview_text, reply_markup=reply_markup, parse_mode="Markdown")
+    return WAITING_DEADLINE_INPUT
+
+
+async def confirm_save_deadline(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Callback for confirming and saving deadline draft."""
+    query = update.callback_query
+    await query.answer()
+    user_id = query.from_user.id
+
+    parsed = context.user_data.get("draft_deadline")
+    if not parsed:
+        await query.edit_message_text("⚠️ Data draf deadline tidak ditemukan. Silakan ketik kembali deadline kamu.")
+        return ConversationHandler.END
+
+    saved_item = add_user_deadline(user_id, parsed["matkul"], parsed["tugas"], parsed["deadline"])
+    context.user_data.pop("draft_deadline", None)
+
+    await query.edit_message_text(
+        f"✅ *Yey! Deadline berhasil disimpan oleh Gwis!* 🌸\n\n"
+        f"• *Matkul:* {saved_item['matkul']}\n"
+        f"• *Deadline:* `{saved_item['deadline']}`\n\n"
+        f"Nanti Gwis bakal kirimkan notifikasi pengingat H-1 dan 3 jam sebelum deadline ya! Semangat! ✨",
+        parse_mode="Markdown"
+    )
+    return ConversationHandler.END
+
+
+async def cancel_deadline_draft(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Callback for canceling deadline draft."""
+    query = update.callback_query
+    await query.answer()
+    context.user_data.pop("draft_deadline", None)
+    await query.edit_message_text("❌ Proses penambahan deadline dibatalkan oleh Gwis.")
+    return ConversationHandler.END
+
+
+async def handle_deadline_buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Callback query handler for deadline list and delete operations."""
+    query = update.callback_query
+    await query.answer()
+    user_id = query.from_user.id
+    data = query.data
+
+    if data == "dl_view_all":
+        deadlines = get_user_deadlines(user_id)
+        if not deadlines:
+            await query.message.reply_text("🌸 Belum ada deadline tugas tersimpan nih.")
+            return
+        text = "📋 *Daftar Seluruh Deadline Aktif Kamu (Gwis):* 🌸\n\n"
+        for idx, d in enumerate(deadlines, 1):
+            text += f"{idx}. *{d['matkul']}*\n   • Tugas: {d['tugas']}\n   • Deadline: `{d['deadline']}`\n\n"
+        await query.message.reply_text(text, parse_mode="Markdown")
+
+    elif data == "dl_delete_menu":
+        deadlines = get_user_deadlines(user_id)
+        if not deadlines:
+            await query.message.reply_text("🌸 Tidak ada deadline yang dapat dihapus.")
+            return
+        keyboard = []
+        for d in deadlines:
+            keyboard.append([InlineKeyboardButton(f"❌ Hapus: {d['matkul']} ({d['deadline']})", callback_data=f"dl_del:{d['id']}")])
+        await query.message.reply_text("🗑 *Pilih deadline yang ingin kamu hapus:*", reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
+
+    elif data.startswith("dl_del:"):
+        dl_id = data.split(":", 1)[1]
+        deleted = delete_user_deadline(user_id, dl_id)
+        if deleted:
+            await query.edit_message_text("✅ Deadline berhasil dihapus dari catatan Gwis!")
+        else:
+            await query.edit_message_text("⚠️ Gagal menghapus deadline.")
+
+
+# --- AI Class Schedule Workflow ---
+
+def _format_schedule_summary(sched_dict: dict) -> str:
+    """Formats schedule dictionary into readable text."""
+    if not sched_dict:
+        return "Belum ada jadwal yang tersimpan."
+    res = ""
+    for day in ["Senin", "Selasa", "Rabu", "Kamis", "Jumat", "Sabtu", "Minggu"]:
+        items = sched_dict.get(day, [])
+        if items:
+            res += f"📌 *{day}:*\n"
+            for it in items:
+                m = it.get("matkul", "Matkul")
+                j = it.get("jam", "-")
+                r = it.get("ruang", "")
+                d = it.get("dosen", "")
+                r_str = f" | Ruang: `{r}`" if r else ""
+                d_str = f" | Dosen: {d}" if d else ""
+                res += f"  • `{j}` - *{m}*{r_str}{d_str}\n"
+            res += "\n"
+    return res if res else "Belum ada jadwal yang tersimpan."
+
+
+async def schedule_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Starts the /jadwal flow with Gwis Persona."""
+    user_id = update.effective_user.id if update.effective_user else update.callback_query.from_user.id
+    today_items = get_daily_schedule(user_id)
+
+    msg_text = "📅 *Jadwal Kuliah & Ruangan (Gwis)* 🌸\n\n"
+    if today_items:
+        msg_text += "📌 *Jadwal Kuliah Kamu Hari Ini:*\n"
+        for it in today_items:
+            r_str = f" | Ruang: `{it.get('ruang', '')}`" if it.get('ruang') else ""
+            msg_text += f"• `{it.get('jam', '-')}` - *{it.get('matkul', 'Matkul')}*{r_str}\n"
+        msg_text += "\n"
+    else:
+        msg_text += "📌 *Jadwal Hari Ini:* Hari ini kamu tidak ada jadwal kuliah (atau belum diisi).\n\n"
+
+    keyboard = [
+        [
+            InlineKeyboardButton("📌 Jadwal Hari Ini", callback_data="sch_today"),
+            InlineKeyboardButton("🗓 Jadwal 1 Minggu", callback_data="sch_weekly")
+        ],
+        [
+            InlineKeyboardButton("🔄 Update / Edit Jadwal", callback_data="sch_update_prompt"),
+            InlineKeyboardButton("🗑 Reset Jadwal", callback_data="sch_clear_prompt")
+        ]
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+
+    if update.callback_query:
+        await update.callback_query.answer()
+        await update.callback_query.message.reply_text(msg_text, reply_markup=reply_markup, parse_mode="Markdown")
+    else:
+        await update.message.reply_text(msg_text, reply_markup=reply_markup, parse_mode="Markdown")
+
+    return WAITING_SCHEDULE_INPUT
+
+
+async def schedule_update_prompt(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Prompts user to send a schedule screenshot or text."""
+    query = update.callback_query
+    await query.answer()
+    msg_text = (
+        "🔄 *Update / Perbarui Jadwal Kuliah* 🌸\n\n"
+        "Silakan **kirim foto / screenshot tabel jadwal kuliah kamu** (dari portal kampus/KRS/foto papan jadwal), "
+        "atau ketik teks jadwal kamu secara bebas!\n\n"
+        "Gwis & Gemini AI bakal membaca dan menyusunnya secara otomatis! ✨\n\n"
+        "💡 Ketik /cancel jika ingin membatalkan."
+    )
+    await query.message.reply_text(msg_text, parse_mode="Markdown")
+    return WAITING_SCHEDULE_INPUT
+
+
+async def process_schedule_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Processes schedule screenshot photo/document or text via Gemini Vision AI and requests confirmation."""
+    status_msg = await update.message.reply_text("🌸 *Gwis & Gemini AI lagi membaca foto/teks jadwal kamu...* ✨", parse_mode="Markdown")
+
+    img_data = None
+    text_content = None
+
+    if update.message.photo:
+        photo = update.message.photo[-1]
+        img_file = await photo.get_file()
+        img_bytes = await img_file.download_as_bytearray()
+        img_data = bytes(img_bytes)
+    elif update.message.document:
+        doc = update.message.document
+        mime = doc.mime_type or ""
+        if mime.startswith("image/") or doc.file_name.lower().endswith(('.jpg', '.jpeg', '.png', '.bmp')):
+            doc_file = await doc.get_file()
+            img_bytes = await doc_file.download_as_bytearray()
+            img_data = bytes(img_bytes)
+    elif update.message.text:
+        text_content = update.message.text.strip()
+
+    parsed_sched = parse_schedule_from_image_or_text(image_bytes_or_path=img_data, text_content=text_content)
+    context.user_data["draft_schedule"] = parsed_sched
+
+    await status_msg.delete()
+
+    if not parsed_sched or not any(parsed_sched.values()):
+        await update.message.reply_text(
+            "⚠️ Gwis tidak dapat mendeteksi tabel jadwal dari foto/teks yang kamu kirimkan.\n"
+            "Harap pastikan foto jadwal terlihat jelas dan coba kirimkan kembali."
+        )
+        return WAITING_SCHEDULE_INPUT
+
+    summary_text = _format_schedule_summary(parsed_sched)
+    preview_text = (
+        "🌸 *Pratinjau Hasil Ekstraksi Jadwal dari Gwis:* ✨\n\n"
+        f"{summary_text}\n"
+        "Apakah kamu ingin menyimpan / memperbarui jadwal kuliah ini?"
+    )
+    keyboard = [
+        [
+            InlineKeyboardButton("✅ Simpan & Update Jadwal", callback_data="sch_confirm_save"),
+            InlineKeyboardButton("❌ Batal", callback_data="sch_cancel")
+        ]
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+
+    await update.message.reply_text(preview_text, reply_markup=reply_markup, parse_mode="Markdown")
+    return WAITING_SCHEDULE_INPUT
+
+
+async def confirm_save_schedule(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Callback for confirming and saving schedule draft."""
+    query = update.callback_query
+    await query.answer()
+    user_id = query.from_user.id
+
+    parsed = context.user_data.get("draft_schedule")
+    if not parsed:
+        await query.edit_message_text("⚠️ Data draf jadwal tidak ditemukan. Silakan kirim ulang foto/teks jadwal.")
+        return ConversationHandler.END
+
+    saved_schedule = save_user_schedule(user_id, parsed)
+    context.user_data.pop("draft_schedule", None)
+
+    summary = _format_schedule_summary(saved_schedule)
+    await query.edit_message_text(
+        f"✅ *Yey! Jadwal kuliah kamu berhasil diperbarui oleh Gwis!* 🌸\n\n"
+        f"{summary}\n"
+        f"Kamu bisa lihat kapan saja menggunakan perintah /jadwal atau tombol 📌 Jadwal Hari Ini!",
+        parse_mode="Markdown"
+    )
+    return ConversationHandler.END
+
+
+async def cancel_schedule_draft(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Callback for canceling schedule draft."""
+    query = update.callback_query
+    await query.answer()
+    context.user_data.pop("draft_schedule", None)
+    await query.edit_message_text("❌ Proses update jadwal dibatalkan oleh Gwis.")
+    return ConversationHandler.END
+
+
+async def handle_schedule_buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Callback query handler for schedule viewing and reset operations."""
+    query = update.callback_query
+    await query.answer()
+    user_id = query.from_user.id
+    data = query.data
+
+    if data == "sch_today":
+        daily = get_daily_schedule(user_id)
+        if not daily:
+            await query.message.reply_text("📌 *Jadwal Hari Ini:* Hari ini kamu tidak ada kelas perkuliahan (atau jadwal belum diisi). 🌸", parse_mode="Markdown")
+        else:
+            text = "📌 *Jadwal Kuliah Kamu Hari Ini:* 🌸\n\n"
+            for it in daily:
+                r_str = f" | Ruang: `{it.get('ruang', '')}`" if it.get('ruang') else ""
+                d_str = f" | Dosen: {it.get('dosen', '')}" if it.get('dosen') else ""
+                text += f"• `{it.get('jam', '-')}` - *{it.get('matkul', 'Matkul')}*{r_str}{d_str}\n"
+            await query.message.reply_text(text, parse_mode="Markdown")
+
+    elif data == "sch_weekly":
+        sched = get_user_schedule(user_id)
+        summary = _format_schedule_summary(sched)
+        await query.message.reply_text(f"🗓 *Jadwal Kuliah Mingguan Kamu (Gwis):* 🌸\n\n{summary}", parse_mode="Markdown")
+
+    elif data == "sch_clear_prompt":
+        cleared = clear_user_schedule(user_id)
+        if cleared:
+            await query.edit_message_text("🗑 *Jadwal kuliah kamu berhasil di-reset / dihapus oleh Gwis.* 🌸")
+        else:
+            await query.edit_message_text("⚠️ Belum ada jadwal yang tersimpan untuk dihapus.")
+
+
+async def cancel_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Cancels current active conversation and cleans up temp files."""
+    user_id = update.effective_user.id
+    cleanup_user_temp(user_id)
+
+    await update.message.reply_text(
+        "❌ Sesi dibatalkan oleh Gwis. Folder sementara telah dibersihkan. 🌸",
+        reply_markup=ReplyKeyboardRemove()
+    )
+    return ConversationHandler.END
