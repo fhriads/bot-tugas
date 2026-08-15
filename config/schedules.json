@@ -1,0 +1,98 @@
+{
+  "5881984267": {
+    "Senin": [
+      {
+        "matkul": "Algoritma dan Pemrograman",
+        "jam": "14:10 - 17:30",
+        "ruang": "Lab. 1",
+        "dosen": "Rudi Mahsun, M.Kom"
+      },
+      {
+        "matkul": "Jaringan Komputer",
+        "jam": "12:30 - 15:00",
+        "ruang": "Ruang 1",
+        "dosen": "Ahmad Tantoni, M.Kom"
+      },
+      {
+        "matkul": "Pemrosesan Data Terdistribusi",
+        "jam": "15:00 - 17:30",
+        "ruang": "Ruang 2",
+        "dosen": "Maemun Saleh, S.Kom"
+      },
+      {
+        "matkul": "Komputer dan Masyarakat",
+        "jam": "15:50 - 17:30",
+        "ruang": "Ruang 6",
+        "dosen": "Saeful Hamdi, M.Kom"
+      }
+    ],
+    "Selasa": [
+      {
+        "matkul": "Pendidikan Agama",
+        "jam": "14:10 - 15:50",
+        "ruang": "Ruang 2",
+        "dosen": "Hasyim Asyari, S.Ip., MH"
+      },
+      {
+        "matkul": "Kalkulus I",
+        "jam": "15:50 - 17:30",
+        "ruang": "Ruang 3",
+        "dosen": "Wafiah Murniati, ST., MT"
+      },
+      {
+        "matkul": "Pengantar Budaya Daerah",
+        "jam": "12:30 - 14:10",
+        "ruang": "Ruang 5",
+        "dosen": "Ir. H. Ambara"
+      },
+      {
+        "matkul": "Etika Profesi IT",
+        "jam": "15:50 - 17:30",
+        "ruang": "Ruang 6",
+        "dosen": "Maulana Ashari, M.Kom"
+      },
+      {
+        "matkul": "Infrastruktur Jaringan Internet",
+        "jam": "12:30 - 15:00",
+        "ruang": "Ruang 1",
+        "dosen": "Ahmad Tantoni, M.Kom"
+      },
+      {
+        "matkul": "Statistika",
+        "jam": "15:00 - 17:30",
+        "ruang": "Lab. 1",
+        "dosen": "Mardi, S.Kom., M.Ak"
+      },
+      {
+        "matkul": "Proyek Pemrograman Mobile",
+        "jam": "15:50 - 17:30",
+        "ruang": "Lab. 2",
+        "dosen": "M. Lukman Hakim, S.Kom"
+      }
+    ],
+    "Rabu": [
+      {
+        "matkul": "Pengantar TIK",
+        "jam": "15:00 - 17:30",
+        "ruang": "Ruang 2",
+        "dosen": "Maemun Saleh, S.Kom"
+      },
+      {
+        "matkul": "Pemrograman Berorientasi Objek",
+        "jam": "12:30 - 15:00",
+        "ruang": "Lab. 2",
+        "dosen": "Saikin, M.Kom"
+      },
+      {
+        "matkul": "Sistem Basis Data",
+        "jam": "15:50 - 17:30",
+        "ruang": "Lab. 1",
+        "dosen": "Hairul Fahmi, M.Kom"
+      }
+    ],
+    "Kamis": [],
+    "Jumat": [],
+    "Sabtu": [],
+    "Minggu": []
+  }
+}

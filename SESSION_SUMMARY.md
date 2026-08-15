@@ -112,11 +112,4 @@ auto-assignment-bot/
 
 ---
 
-## 💡 6. Ide Pengembangan Selanjutnya (Top Recommendations)
-1. **`💬 Draf Template Chat Sopan ke Dosen` (Etika WA Dosen)**: Template pesan WA etis untuk izin sakit, bimbingan, atau konfirmasi revisi.
-2. **`📊 Perekap Kehadiran & Jatah Bolos Kuliah` (Attendance Tracker)**: Melacak sisa kuota bolos agar tidak kena sanksi larangan ikut UAS (max 75% kehadiran).
-3. **`🧮 Kalkulator Target Nilai UTS/UAS & IPK Simulator`**: Menghitung nilai minimal UTS/UAS yang harus diraih untuk mendapat Grade A/B+ dan menaikkan IPK.
-
----
-
 *Dokumen ini dibuat pada: 10 Agustus 2026*
